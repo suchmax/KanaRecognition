@@ -1,0 +1,6 @@
+/.idea
+/__pycache__
+.DS_Store
+/tf_kana
+test.py
+*.npz
