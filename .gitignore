@@ -3,4 +3,9 @@
 .DS_Store
 /tf_kana
 test.py
-*.npz
+hiragana.npz
+kana.npz
+katakana_test_images.npz
+katakana_train_images.npz
+hiragana_test_images.npz
+hiragana_train_images.npz

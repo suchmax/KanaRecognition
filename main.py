@@ -10,8 +10,10 @@ import torch.nn as nn
 
 from model import KanaModel
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.rcParams['font.family'] = "Hiragino Sans"
 
-def view_single_image(image_array, index=0):
+def view_single_image(image_array, char, index=0):
     """
     View a single image from your dataset
     image_array: numpy array of shape (num_images, 48, 48) with values 0-1
@@ -23,18 +25,22 @@ def view_single_image(image_array, index=0):
     # Create plot
     plt.figure(figsize=(5, 5))
     plt.imshow(img, cmap='gray', vmin=0, vmax=1)
-    plt.title(f"Image {index}")
+    plt.title(f"Image {index} - {char}")
     plt.axis('off')  # Hide axes
     plt.show()
 
     return img
+
 # 48 x 48 (2304)
 train_images_hira = np.load("hiragana_train_images.npz")['arr_0']
 train_labels_hira = np.load("hiragana_train_labels.npz")['arr_0']
 train_images_kata = np.load("katakana_train_images.npz")['arr_0']
 train_labels_kata = np.load("katakana_train_labels.npz")['arr_0']
 
-train_labels_kata = np.array([label + len(labels.hiragana) for label in train_labels_kata])
+# label each label in the group with 0 or 1 (hiragana/katakana)
+# [0, 1, 2, 3] -> [(0, 0), (0, 1), ...]
+train_labels_hira = np.column_stack((np.zeros_like(train_labels_hira), train_labels_hira))
+train_labels_kata = np.column_stack((np.ones_like(train_labels_kata), train_labels_kata))
 
 train_images = np.concatenate([train_images_hira, train_images_kata])
 train_labels = np.concatenate([train_labels_hira, train_labels_kata])
@@ -60,22 +66,23 @@ times = []
 
 for epoch in range(n_epoch):
     losses = []
-    for batch_x, (y_script, y_base, y_diacritic) in dataloader:
-        if batch_x.shape[0] < batch_size:
+    for batch_x, (y_base, y_diacritic) in dataloader:
+        (x_script, x_image) = batch_x
+
+        if x_image.shape[0] < batch_size:
             continue
 
         start = time.time()
 
-        batch_x = batch_x.unsqueeze(1)
+        x_image = x_image.unsqueeze(1)
 
         # flatten the image but keep the batch
-        out_script, out_base, out_dakuten = model(batch_x)
+        out_base, out_dakuten = model(x_script, x_image)
 
-        loss_script = loss_fn(out_script, y_script)
         loss_base = loss_fn(out_base, y_base)
         loss_dakuten = loss_fn(out_dakuten, y_diacritic)
 
-        loss = 2* loss_script + loss_base + 0.5 * loss_dakuten
+        loss = loss_base + loss_dakuten
 
         optimizer.zero_grad()
         loss.backward()
@@ -102,29 +109,3 @@ for epoch in range(n_epoch):
     print("finished epoch", epoch)
     if epoch % 5 == 0:
         torch.save(model.state_dict(), f"models/KanaNet_e{epoch}.pth")
-
-
-test_images_hira = np.load("hiragana_test_images.npz")['arr_0']
-test_images_kata = np.load("katakana_test_images.npz")['arr_0']
-test_labels_hira = np.load("hiragana_test_labels.npz")['arr_0']
-test_labels_kata = np.load("katakana_test_labels.npz")['arr_0']
-
-test_labels_kata = np.array([label + len(labels.hiragana) for label in test_labels_kata])
-test_images = np.concatenate([test_images_hira, test_images_kata])
-test_labels = np.concatenate([test_labels_hira, test_labels_kata])
-
-test_dataset = Dataset(test_images, test_labels)
-test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=True)
-
-correct = 0
-total = len(test_dataset)
-
-for batch_x, batch_y in test_dataloader:
-    prediction = model(batch_x)
-    if prediction.argmax() == batch_y.argmax():
-        print("guessed correctly #", batch_y.argmax())
-        correct += 1
-    else:
-        print("guessed incorrectly #", batch_y.argmax())
-
-print(f"Accuracy: {100 * correct / total}")

@@ -15,7 +15,7 @@ from model import KanaModel
 
 import matplotlib.pyplot as plt
 
-def view_single_image(image_array, index=0):
+def view_single_image(image_array, char, index=0):
     """
     View a single image from your dataset
     image_array: numpy array of shape (num_images, 48, 48) with values 0-1
@@ -27,25 +27,24 @@ def view_single_image(image_array, index=0):
     # Create plot
     plt.figure(figsize=(5, 5))
     plt.imshow(img, cmap='gray', vmin=0, vmax=1)
-    plt.title(f"Image {index}")
+    plt.title(f"Image {index} - {char}")
     plt.axis('off')  # Hide axes
     plt.show()
 
     return img
 
-test_images_hira = np.load("hiragana_test_images.npz")['arr_0']
-test_images_kata = np.load("katakana_test_images.npz")['arr_0']
-test_labels_hira = np.load("hiragana_test_labels.npz")['arr_0']
-test_labels_kata = np.load("katakana_test_labels.npz")['arr_0']
+train_images_hira = np.load("hiragana_test_images.npz")['arr_0']
+train_labels_hira = np.load("hiragana_test_labels.npz")['arr_0']
+train_images_kata = np.load("katakana_test_images.npz")['arr_0']
+train_labels_kata = np.load("katakana_test_labels.npz")['arr_0']
 
-test_labels_kata = np.array([label + len(labels.hiragana) for label in test_labels_kata])
-test_images = np.concatenate([test_images_hira, test_images_kata])
-test_labels = np.concatenate([test_labels_hira, test_labels_kata])
+# label each label in the group with 0 or 1 (hiragana/katakana)
+# [0, 1, 2, 3] -> [(0, 0), (0, 1), ...]
+train_labels_hira = np.column_stack((np.zeros_like(train_labels_hira), train_labels_hira))
+train_labels_kata = np.column_stack((np.ones_like(train_labels_kata), train_labels_kata))
 
-# for i in test_images_hira:
-#     print(i)
-#     view_single_image(i)
-
+test_images = np.concatenate([train_images_hira, train_images_kata])
+test_labels = np.concatenate([train_labels_hira, train_labels_kata])
 
 dataset = Dataset(test_images, test_labels)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
@@ -57,26 +56,20 @@ total = len(dataset)
 model1 = KanaModel(in_channels=1, d_model=64, out_base=labels.n_base, out_dakuten=3)
 model2 = KanaModel(in_channels=1, d_model=64, out_base=labels.n_base, out_dakuten=3)
 
-model1.load_state_dict(torch.load("models/KanaNet_e5.pth"))
-model2.load_state_dict(torch.load("models/KanaNet_e20.pth"))
+model1.load_state_dict(torch.load("models/KanaNet_e20.pth"))
+model2.load_state_dict(torch.load("models/KanaNet_e25.pth"))
 
 
-incorrect_script = [0, 0]
 correct = [0, 0]
-
-for i, model in enumerate([model2]):
-    for idx, (batch_x, (y_script, y_base, y_diacritic)) in enumerate(dataloader):
-        batch_x = batch_x.unsqueeze(1)
-
+script_onehot = torch.eye(2)
+for i, model in enumerate([model1, model2]):
+    for idx, (batch_x, (y_base, y_diacritic)) in enumerate(dataloader):
+        (x_script, x_image) = batch_x
         with torch.no_grad():
             model.eval()
-            pred_script, pred_base, pred_diacritic = model(batch_x)
+            pred_base, pred_diacritic = model(x_script, x_image.unsqueeze(0))
 
-        if pred_script.argmax() != y_script.argmax():
-            incorrect_script[i] += 1
-            print("incorrect script guess for idx", idx)
-
-        if pred_script.argmax() == y_script.argmax() and pred_diacritic.argmax() == y_diacritic.argmax() and pred_base.argmax() == y_base.argmax():
+        if y_base.argmax() == pred_base.argmax() and y_diacritic.argmax() == pred_diacritic.argmax():
             correct[i] += 1
 
         if idx % 100 == 0:
@@ -87,5 +80,3 @@ for i, model in enumerate([model2]):
 
 print(f"Accuracy 1: {100 * correct[0] / total}")
 print(f"Accuracy 2: {100 * correct[1] / total}")
-print("incorrectly guessed script 1:", incorrect_script[0])
-print("incorrectly guessed script 2:", incorrect_script[1])
